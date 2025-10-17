@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  orchestrator:
+    build: .
+    command: ["./glazeld", "-redis", "redis:6379"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_ADDR=redis:6379
+
+  agent-1:
+    build: .
+    command: ["./glazel-agent", "-id", "agent-1", "-http", ":9090", "-redis", "redis:6379"]
+    ports:
+      - "9091:9090"
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_ADDR=redis:6379
+
+  agent-2:
+    build: .
+    command: ["./glazel-agent", "-id", "agent-2", "-http", ":9090", "-redis", "redis:6379"]
+    ports:
+      - "9092:9090"
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_ADDR=redis:6379
+
+  agent-3:
+    build: .
+    command: ["./glazel-agent", "-id", "agent-3", "-http", ":9090", "-redis", "redis:6379"]
+    ports:
+      - "9093:9090"
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_ADDR=redis:6379

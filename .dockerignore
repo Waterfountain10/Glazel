@@ -1,0 +1,7 @@
+.git
+.gitignore
+README.md
+.DS_Store
+*.md
+.vscode
+.idea
