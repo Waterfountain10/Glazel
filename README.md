@@ -1,8 +1,13 @@
-**Glazel**
+# Glazel
+>>>>>>> e7abac6 (help)
 
-Glazel is a distributed, content-addressable build cache for .cpp builds.
+Distributed, content-addressable build cache for .cpp builds. (with CLI tooling)
 
-![Glazel Demo](assets/screenshot.png)
+### 1st time building cpp file
+![Glazel Demo](assets/sc1.png)
+
+### 2nd time building cpp file
+![Glazel Demo](assets/sc2.png)
 
 ---
 
