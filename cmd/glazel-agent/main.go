@@ -4,7 +4,9 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net/http"
 	"os"
+	"time"
 
 	"github.com/Waterfountain10/glazel/internal/worker"
 )
@@ -20,12 +22,30 @@ func main() {
 	logger := log.New(os.Stdout, "[glazel-agent] ", log.LstdFlags|log.Lmicroseconds)
 	logger.Printf("starting agent %s on %s", *id, *httpAddr)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := context.Background()
 
+	// heartbeat to Redis
 	reg := worker.NewRegistry(*id, *httpAddr, *redisAddr)
-	go reg.StartHeartbeat(ctx)
+	go func() {
+		_ = reg.StartHeartbeat(ctx)
+	}()
 
-	// simple block so the program keeps running
-	select {}
+	// exec server
+	mux := http.NewServeMux()
+	execSrv := &worker.ExecServer{WorkerID: *id}
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/v1/exec", execSrv.HandleExec)
+
+	srv := &http.Server{
+		Addr:              *httpAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Fatalf("agent http server error: %v", err)
+	}
 }
