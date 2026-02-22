@@ -22,13 +22,11 @@ func Execute() {
 	}
 }
 
+var serverAddr string
+
 func init() {
-	rootCmd.PersistentFlags().StringVar(
-		&redisAddr,
-		"redis",
-		"localhost:6379",
-		"Redis address",
-	)
+	rootCmd.PersistentFlags().StringVar(&redisAddr, "redis", "localhost:6379", "Redis address")
+	rootCmd.PersistentFlags().StringVar(&serverAddr, "server", "http://localhost:8080", "Orchestrator server URL")
 
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(buildCmd)
