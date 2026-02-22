@@ -1,6 +1,4 @@
 # Glazel
->>>>>>> e7abac6 (help)
-
 Distributed, content-addressable build cache for .cpp builds. (with CLI tooling)
 
 ### 1st time building cpp file
