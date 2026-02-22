@@ -2,6 +2,7 @@ package root
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,8 +14,44 @@ import (
 	"time"
 
 	"github.com/Waterfountain10/glazel/internal/api"
+	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 )
+
+func getWorkerCount(redisAddr string) int {
+	ctx := context.Background()
+	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
+	keys, err := rdb.Keys(ctx, "glazel:workers:*").Result()
+	if err != nil {
+		return 0
+	}
+	return len(keys)
+}
+
+func readPreviousBuildTime() time.Duration {
+	b, err := os.ReadFile(".glazel/metrics.json")
+	if err != nil {
+		return 0
+	}
+	var d struct {
+		LastBuildMs int64 `json:"last_build_ms"`
+	}
+	if json.Unmarshal(b, &d) != nil {
+		return 0
+	}
+	return time.Duration(d.LastBuildMs) * time.Millisecond
+}
+
+func writeBuildTime(d time.Duration) {
+	os.MkdirAll(".glazel", 0755)
+	data := struct {
+		LastBuildMs int64 `json:"last_build_ms"`
+	}{
+		LastBuildMs: d.Milliseconds(),
+	}
+	b, _ := json.Marshal(data)
+	_ = os.WriteFile(".glazel/metrics.json", b, 0644)
+}
 
 func collectCppFiles(path string) ([]string, error) {
 	st, err := os.Stat(path)
@@ -96,8 +133,13 @@ var buildCmd = &cobra.Command{
 			return
 		}
 
+		workerCount := getWorkerCount(redisAddr)
+
 		fmt.Printf("\n%s%s>>> GLAZEL BUILD%s\n\n", bold, blue, reset)
-		fmt.Printf("%sFiles:%s %d   %sServer:%s %s\n\n", dim, reset, len(files), dim, reset, serverAddr)
+		fmt.Printf("%sCluster:%s %d workers healthy (distributed mode)\n",
+			dim, reset, workerCount)
+		fmt.Printf("%sFiles:%s %d   %sServer:%s %s\n\n",
+			dim, reset, len(files), dim, reset, serverAddr)
 
 		fmt.Printf("%-28s %-10s %-8s %-6s\n", "FILE", "WORKER", "STATUS", "HASH")
 		fmt.Println("--------------------------------------------------------------")
@@ -127,7 +169,22 @@ var buildCmd = &cobra.Command{
 		}
 
 		fmt.Printf("\n%sCache:%s %d hit / %d miss  (%d%% hit rate)\n", dim, reset, resp.CacheHits, resp.CacheMisses, hitRate)
-		fmt.Printf("%sTime:%s  %s\n\n", dim, reset, dt.Round(time.Millisecond))
+		prev := readPreviousBuildTime()
+		writeBuildTime(dt)
+		if prev > 0 {
+			speedup := float64(prev) / float64(dt)
+			fmt.Printf("%sTime:%s  %s  (previous: %s, %.1fx faster)\n\n",
+				dim, reset,
+				dt,
+				prev.Round(time.Millisecond),
+				speedup,
+			)
+		} else {
+			fmt.Printf("%sTime:%s  %s\n\n",
+				dim, reset,
+				dt,
+			)
+		}
 		fmt.Printf("%sOutput:%s %s\n", dim, reset, resp.OutPath)
 	},
 }
