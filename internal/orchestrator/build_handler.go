@@ -14,12 +14,14 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/Waterfountain10/glazel/internal/api"
+	"github.com/Waterfountain10/glazel/internal/storage"
 	"github.com/Waterfountain10/glazel/internal/utils"
 )
 
 type BuildServer struct {
 	Redis     *redis.Client
 	NextIndex int
+	CASRoot   string // ".glazel/cas"
 }
 
 func (s *BuildServer) listWorkers(ctx context.Context) ([]WorkerInfo, error) {
@@ -65,6 +67,8 @@ func (s *BuildServer) cacheKeyObj(hash string) string {
 
 func (s *BuildServer) HandleBuild(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
+	cas := storage.NewCAS(s.CASRoot)
+	_ = cas.EnsureDirs()
 
 	var req api.BuildRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
