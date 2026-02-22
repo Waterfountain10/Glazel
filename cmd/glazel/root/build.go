@@ -128,6 +128,7 @@ var buildCmd = &cobra.Command{
 
 		fmt.Printf("\n%sCache:%s %d hit / %d miss  (%d%% hit rate)\n", dim, reset, resp.CacheHits, resp.CacheMisses, hitRate)
 		fmt.Printf("%sTime:%s  %s\n\n", dim, reset, dt.Round(time.Millisecond))
+		fmt.Printf("%sOutput:%s %s\n", dim, reset, resp.OutPath)
 	},
 }
 

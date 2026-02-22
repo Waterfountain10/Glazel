@@ -19,10 +19,12 @@ var (
 
 func main() {
 	flag.Parse()
+
 	logger := log.New(os.Stdout, "[glazeld] ", log.LstdFlags|log.Lmicroseconds)
-	logger.Printf("starting orchestrator on %s (redis=%s)", *httpAddr, *redisAddr)
+	logger.Printf("starting orchestrator on %s", *httpAddr)
 
 	rdb := redis.NewClient(&redis.Options{Addr: *redisAddr})
+
 	buildSrv := &orchestrator.BuildServer{
 		Redis:   rdb,
 		CASRoot: ".glazel/cas",
@@ -31,7 +33,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+		w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/v1/build", buildSrv.HandleBuild)
 
@@ -41,7 +43,7 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.Fatalf("orchestrator http server error: %v", err)
+	if err := srv.ListenAndServe(); err != nil {
+		logger.Fatalf("server error: %v", err)
 	}
 }

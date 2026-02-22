@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"time"
@@ -21,7 +22,7 @@ import (
 type BuildServer struct {
 	Redis     *redis.Client
 	NextIndex int
-	CASRoot   string // ".glazel/cas"
+	CASRoot   string
 }
 
 func (s *BuildServer) listWorkers(ctx context.Context) ([]WorkerInfo, error) {
@@ -32,7 +33,8 @@ func (s *BuildServer) listWorkers(ctx context.Context) ([]WorkerInfo, error) {
 	sort.Strings(keys)
 
 	now := time.Now().Unix()
-	out := make([]WorkerInfo, 0, len(keys))
+	out := []WorkerInfo{}
+
 	for _, k := range keys {
 		val, err := s.Redis.Get(ctx, k).Result()
 		if err != nil {
@@ -42,7 +44,6 @@ func (s *BuildServer) listWorkers(ctx context.Context) ([]WorkerInfo, error) {
 		if json.Unmarshal([]byte(val), &w) != nil {
 			continue
 		}
-		// Consider worker healthy if last_seen within ~10s
 		if now-w.LastSeen <= 10 {
 			out = append(out, w)
 		}
@@ -59,22 +60,20 @@ func (s *BuildServer) pickWorker(workers []WorkerInfo) WorkerInfo {
 	return w
 }
 
-// Cache format (simple, real):
-// glazel:obj:<hash> -> raw .o bytes (Redis string)
 func (s *BuildServer) cacheKeyObj(hash string) string {
 	return "glazel:obj:" + hash
 }
 
 func (s *BuildServer) HandleBuild(w http.ResponseWriter, r *http.Request) {
+
 	ctx := context.Background()
-	cas := storage.NewCAS(s.CASRoot)
-	_ = cas.EnsureDirs()
 
 	var req api.BuildRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
+
 	if req.Compiler == "" {
 		req.Compiler = "g++"
 	}
@@ -92,37 +91,40 @@ func (s *BuildServer) HandleBuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := api.BuildResponse{Rows: make([]api.TaskRow, 0, len(req.Files))}
+	cas := storage.NewCAS(s.CASRoot)
+	_ = cas.EnsureDirs()
+
+	resp := api.BuildResponse{}
 
 	for _, path := range req.Files {
-		srcBytes, err := osReadFile(path)
+
+		srcBytes, err := os.ReadFile(path)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("read %s failed: %v", path, err), http.StatusBadRequest)
 			return
 		}
 
-		// hash includes: file bytes + compiler + flags (keeps it deterministic)
 		hashInput := append([]byte{}, srcBytes...)
 		hashInput = append(hashInput, []byte(req.Compiler)...)
 		for _, f := range req.CxxFlags {
 			hashInput = append(hashInput, []byte(f)...)
 		}
+
 		hash := utils.Sha256Hex(hashInput)
 		hash4 := utils.Last4(hash)
 
-		// Cache check
-		objKey := s.cacheKeyObj(hash)
-
-		// HIT if CAS has it (disk), or Redis points to it (optional)
 		if cas.HasObj(hash) {
 			resp.CacheHits++
 			resp.Rows = append(resp.Rows, api.TaskRow{
-				File: path, WorkerID: "-", Status: "HIT", HashFull: hash, Hash4: hash4,
+				File:     path,
+				WorkerID: "-",
+				Status:   "HIT",
+				HashFull: hash,
+				Hash4:    hash4,
 			})
 			continue
 		}
 
-		// MISS -> dispatch to worker
 		worker := s.pickWorker(workers)
 
 		execReq := api.ExecRequest{
@@ -130,14 +132,19 @@ func (s *BuildServer) HandleBuild(w http.ResponseWriter, r *http.Request) {
 			FileName: filepath.Base(path),
 			Source:   srcBytes,
 			Compiler: req.Compiler,
-			Args:     append([]string{}, req.CxxFlags...),
+			Args:     req.CxxFlags,
 			HashFull: hash,
 		}
 
 		body, _ := json.Marshal(execReq)
-		httpResp, err := http.Post("http://localhost"+worker.Addr+"/v1/exec", "application/json", bytes.NewReader(body))
+
+		httpResp, err := http.Post(
+			"http://localhost"+worker.Addr+"/v1/exec",
+			"application/json",
+			bytes.NewReader(body),
+		)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("worker dispatch failed (%s): %v", worker.ID, err), http.StatusBadGateway)
+			http.Error(w, fmt.Sprintf("dispatch failed: %v", err), http.StatusBadGateway)
 			return
 		}
 		defer httpResp.Body.Close()
@@ -148,20 +155,16 @@ func (s *BuildServer) HandleBuild(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !execResp.Ok {
-			http.Error(w, fmt.Sprintf("compile failed on %s: %s", worker.ID, execResp.Stderr), http.StatusBadRequest)
+			http.Error(w, execResp.Stderr, http.StatusBadRequest)
 			return
 		}
 
-		// Store object bytes into Redis
-		objPath, err := cas.PutObj(hash, execResp.Object)
-		if err != nil {
+		if _, err := cas.PutObj(hash, execResp.Object); err != nil {
 			http.Error(w, "cas store failed", http.StatusInternalServerError)
 			return
 		}
-		if err := s.Redis.Set(ctx, objKey, objPath, 0).Err(); err != nil {
-			http.Error(w, "redis metadata store failed", http.StatusInternalServerError)
-			return
-		}
+
+		_ = s.Redis.Set(ctx, s.cacheKeyObj(hash), "present", 0)
 
 		resp.CacheMisses++
 		resp.Rows = append(resp.Rows, api.TaskRow{
@@ -173,12 +176,29 @@ func (s *BuildServer) HandleBuild(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// For this milestone: we skip linking. Demo focus is distributed compile + cache.
-	resp.OutPath = "(linking next milestone)"
+	// ---- LINK STAGE ----
+
+	outDir := ".glazel/out"
+	_ = os.MkdirAll(outDir, 0755)
+
+	exePath := filepath.Join(outDir, req.Out)
+
+	objPaths := []string{}
+	for _, row := range resp.Rows {
+		objPaths = append(objPaths, cas.ObjPath(row.HashFull))
+	}
+
+	linkArgs := append(objPaths, "-o", exePath)
+
+	linkCmd := exec.Command(req.Compiler, linkArgs...)
+	output, err := linkCmd.CombinedOutput()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("link failed: %s", string(output)), http.StatusBadRequest)
+		return
+	}
+
+	resp.OutPath = exePath
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
-
-// small wrapper to keep imports clean
-func osReadFile(path string) ([]byte, error) { return os.ReadFile(path) }
