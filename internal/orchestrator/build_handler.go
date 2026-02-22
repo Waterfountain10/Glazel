@@ -138,6 +138,8 @@ func (s *BuildServer) HandleBuild(w http.ResponseWriter, r *http.Request) {
 
 		body, _ := json.Marshal(execReq)
 
+		fmt.Printf("[orchestrator] dispatch %s -> %s\n", filepath.Base(path), worker.ID)
+
 		httpResp, err := http.Post(
 			"http://localhost"+worker.Addr+"/v1/exec",
 			"application/json",

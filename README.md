@@ -10,4 +10,11 @@ docker compose logs -f  # watch logs
 docker compose down     # stop
 ```
 
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+  <img src="assets/redis.gif" />
+  <img src="assets/orchestrator.gif" />
+  <img src="assets/agent.gif" />
+  <img src="assets/client.gif" />
+</div>
+
 -- W
