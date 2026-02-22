@@ -1,4 +1,6 @@
-**Glazel is a distributed, content-addressable build cache for accelerating C++ compilation across machines.**
+**Glazel**
+
+Glazel is a distributed, content-addressable build cache for .cpp builds.
 
 ![Glazel Demo](assets/screenshot.png)
 
