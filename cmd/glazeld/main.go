@@ -23,7 +23,10 @@ func main() {
 	logger.Printf("starting orchestrator on %s (redis=%s)", *httpAddr, *redisAddr)
 
 	rdb := redis.NewClient(&redis.Options{Addr: *redisAddr})
-	buildSrv := &orchestrator.BuildServer{Redis: rdb}
+	buildSrv := &orchestrator.BuildServer{
+		Redis:   rdb,
+		CASRoot: ".glazel/cas",
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

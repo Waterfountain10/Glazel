@@ -112,15 +112,12 @@ func (s *BuildServer) HandleBuild(w http.ResponseWriter, r *http.Request) {
 
 		// Cache check
 		objKey := s.cacheKeyObj(hash)
-		_, err = s.Redis.Get(ctx, objKey).Bytes()
-		if err == nil {
+
+		// HIT if CAS has it (disk), or Redis points to it (optional)
+		if cas.HasObj(hash) {
 			resp.CacheHits++
 			resp.Rows = append(resp.Rows, api.TaskRow{
-				File:     path,
-				WorkerID: "-",
-				Status:   "HIT",
-				HashFull: hash,
-				Hash4:    hash4,
+				File: path, WorkerID: "-", Status: "HIT", HashFull: hash, Hash4: hash4,
 			})
 			continue
 		}
@@ -156,8 +153,13 @@ func (s *BuildServer) HandleBuild(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Store object bytes into Redis
-		if err := s.Redis.Set(ctx, objKey, execResp.Object, 0).Err(); err != nil {
-			http.Error(w, "cache store failed", http.StatusInternalServerError)
+		objPath, err := cas.PutObj(hash, execResp.Object)
+		if err != nil {
+			http.Error(w, "cas store failed", http.StatusInternalServerError)
+			return
+		}
+		if err := s.Redis.Set(ctx, objKey, objPath, 0).Err(); err != nil {
+			http.Error(w, "redis metadata store failed", http.StatusInternalServerError)
 			return
 		}
 
