@@ -1,10 +1,11 @@
 # Glazel
 Distributed, content-addressable build cache for .cpp builds. (with CLI tooling)
 
-### cache MISS ex: (build hash is not in redis)
+### cache MISS example:
+*(build hash is not in redis)*
 ![Glazel Demo](assets/sc1.png)
 
-### cache HIT ex:
+### cache HIT example:
 ![Glazel Demo](assets/sc2.png)
 
 ---
