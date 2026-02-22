@@ -1,20 +1,106 @@
-i made Glazel cuz my C++ projects like my Game Boy emulator take forever to build sometimes, like 40s-50s cold for complex c++ projects, and it adds up when I keep changing stuff. I switch between arm mac, windows, (and my friends whom i collab often with use linux) so it's annoying rebuilding the same files everywhere.
+**Glazel is a distributed, content-addressable build cache for accelerating C++ compilation across machines.**
 
-tools like bazel or distcc didn't really fit my setup so I built my own thing that shares build results across devices, cuts build time by a *lot* (~5s build time), and just makes my workflow way faster.
+![Glazel Demo](assets/screenshot.png)
 
-## usage
+---
 
-```bash
-docker compose up -d    # start everything
-docker compose logs -f  # watch logs
-docker compose down     # stop
+## Architecture
+
+```text
+                        ┌────────────────────────────┐
+                        │           CLI              │
+                        │  glazel build ./project    │
+                        └─────────────┬──────────────┘
+                                      │  HTTP
+                                      ▼
+                        ┌────────────────────────────┐
+                        │        Orchestrator        │
+                        │────────────────────────────│
+                        │ • Discovers workers        │
+                        │ • Computes file hashes     │
+                        │ • Checks cache (Redis)     │
+                        │ • Dispatches MISS tasks    │
+                        │ • Links final binary       │
+                        └─────────────┬──────────────┘
+                                      │
+                    ┌─────────────────┼─────────────────┐
+                    ▼                 ▼                 ▼
+            ┌────────────┐    ┌────────────┐    ┌────────────┐
+            │  Agent-1   │    │  Agent-2   │    │  Agent-N   │
+            │────────────│    │────────────│    │────────────│
+            │ Compile TU │    │ Compile TU │    │ Compile TU │
+            │ Return .o  │    │ Return .o  │    │ Return .o  │
+            └────────────┘    └────────────┘    └────────────┘
+
+Redis:
+• Worker heartbeats
+• Cache metadata (hash → artifact)
 ```
 
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-  <img src="assets/redis.gif" />
-  <img src="assets/orchestrator.gif" />
-  <img src="assets/agent.gif" />
-  <img src="assets/client.gif" />
-</div>
+---
 
--- W
+## How It Works
+
+1. Each `.cpp` file is hashed:
+
+```
+SHA256(file contents + compiler + flags)
+```
+
+2. If the hash exists → cache HIT → skip compile
+3. If not → dispatch to available worker → compile → store artifact
+4. Orchestrator links cached + compiled objects into final binary
+
+Second builds reuse artifacts deterministically.
+
+---
+
+## Example
+
+Cold build:
+
+```
+FILE         WORKER    STATUS   HASH
+--------------------------------------
+main.cpp     agent-1   MISS     1313
+util.cpp     agent-2   MISS     518b
+
+Cache: 0 hit / 2 miss
+Time: 82ms
+```
+
+Warm build:
+
+```
+FILE         WORKER    STATUS   HASH
+--------------------------------------
+main.cpp     -         HIT      1313
+util.cpp     -         HIT      518b
+
+Cache: 2 hit / 0 miss
+Time: 8ms  (10.2x faster)
+```
+
+---
+
+## Running
+
+Start infrastructure:
+
+```
+redis-server
+glazeld --redis localhost:6379
+glazel-agent --id agent-1 --http :9090
+```
+
+Build:
+
+```
+glazel build examples/hello
+```
+
+Inspect cache:
+
+```
+glazel cache stats
+```

@@ -20,9 +20,8 @@ go build -o glazeld ./cmd/glazeld
 go build -o glazel-agent ./cmd/glazel-agent
 go build -o glazel ./cmd/glazel
 
+make install
+
 echo "Demo ready."
 
-vhs tapes/redis.tape
-vhs tapes/orchestrator.tape
-vhs tapes/agent.tape
-vhs tapes/client.tape
+vhs tapes/glazel-cli.tape
