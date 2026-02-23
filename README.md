@@ -7,6 +7,7 @@ Distributed, content-addressable build cache for .cpp builds. (with CLI tooling)
 ### cache HIT example:
 ![Glazel Demo](assets/sc2.png)
 
+2.5x faster "build" time when cache hit vs pure build (no cache hit)
 ---
 
 ## Architecture
