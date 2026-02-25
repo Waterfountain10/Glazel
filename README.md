@@ -1,11 +1,22 @@
 # Glazel
 Distributed, content-addressable build cache for .cpp builds. (with CLI tooling)
 
-### cache MISS example: *(build hash is not in redis)*
 ![Glazel Demo](assets/sc1.png)
 
-### cache HIT example:
-![Glazel Demo](assets/sc2.png)
+<table>
+  <tr>
+    <td align="center"><strong>Cache MISS</strong></td>
+    <td align="center"><strong>Cache HIT</strong></td>
+  </tr>
+  <tr>
+    <td>
+      <img src="assets/miss.png" alt="Glazel cache miss" width="400">
+    </td>
+    <td>
+      <img src="assets/hit.png" alt="Glazel cache hit" width="400">
+    </td>
+  </tr>
+</table>
 
 2.5x faster "build" time when cache hit vs pure build (no cache hit)
 
